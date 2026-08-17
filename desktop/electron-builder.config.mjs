@@ -66,6 +66,8 @@ export default {
   },
   linux: {
     category: 'Development',
+    // AppImage rejects the scoped package name (@ is unsafe in file paths).
+    executableName: 'deepseek-harness',
     target: [
       { target: 'AppImage', arch: [targetArch] },
       { target: 'deb', arch: [targetArch] },

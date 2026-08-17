@@ -44,6 +44,22 @@ if (argv.includes('--skip-runtime')) {
   run('prepare runtime', 'pnpm', ['run', 'prepare:runtime'], desktopDir)
 }
 
+// CI passes signing variables unconditionally, so an unconfigured secret
+// arrives as an EMPTY string — which electron-builder then treats as a real
+// value (an empty CSC_LINK resolves to the project directory: "not a file").
+// Drop empty ones, and drop a certificate whose password half is missing so
+// the build degrades to unsigned instead of failing the import.
+const SIGNING_ENV = ['CSC_LINK', 'CSC_KEY_PASSWORD', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
+for (const name of SIGNING_ENV) {
+  if (process.env[name] === '') delete process.env[name]
+}
+for (const [link, password] of [['CSC_LINK', 'CSC_KEY_PASSWORD'], ['WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD']] as const) {
+  if (process.env[link] !== undefined && process.env[password] === undefined) {
+    console.log(`package: ${link} is set but ${password} is not — building unsigned`)
+    delete process.env[link]
+  }
+}
+
 const publishIndex = argv.indexOf('--publish')
 const publishMode = publishIndex >= 0 ? argv[publishIndex + 1] : 'never'
 const targetPlatform = process.env.DSH_DESKTOP_TARGET_PLATFORM ?? process.platform
