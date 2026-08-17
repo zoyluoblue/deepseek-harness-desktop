@@ -1,4 +1,4 @@
-# @deepseek-ai/dsh-desktop
+# dsh-desktop
 
 Electron desktop shell for the DeepSeek Harness Web GUI. The shell is thin by design: the Electron main process launches the harness web surface (`dsh web --port 0`) as a child process on a bundled Node 24 runtime, waits for the `dsh web: <url>` readiness line, and shows that loopback URL in a `BrowserWindow`. Everything else — the `/api` protocol, the React frontend, sessions, settings, credentials — is the unmodified web product. Sessions and settings live in the shared `~/.dsh` (`$DSH_HOME`), so the app and a CLI install see the same state.
 
