@@ -1,0 +1,25 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Electron desktop shell for the DeepSeek Harness Web GUI: spawns the harness web surface as a child process on a bundled Node runtime and shows it in a BrowserWindow.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build:main": "node build.mjs",
+    "dev": "pnpm run build:main && electron .",
+    "smoke": "pnpm run build:main && electron . --smoke",
+    "prepare:runtime": "tsx scripts/prepare-runtime.ts",
+    "package": "pnpm run build:main && tsx scripts/package.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}

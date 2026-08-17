@@ -1,0 +1,18 @@
+# desktop/ is its own single-package pnpm workspace, deliberately OUTSIDE the
+# repo root workspace: Electron's postinstall downloads a ~100MB binary, and
+# making it a root member would impose that download (and an allowBuilds entry)
+# on every `pnpm install` of the monorepo, including every CI job. The harness
+# runtime closure the app bundles is materialized separately from the root
+# workspace member desktop/runtime via `pnpm deploy` (see scripts/prepare-runtime.ts).
+# app-builder-lib 26.15.3 declares @electron/get@^3.0.0 but calls
+# ElectronDownloadCacheMode, which only exists in the v5 line Electron 43
+# itself depends on; force one modern copy for both consumers.
+overrides:
+  '@electron/get': ^5.1.0
+
+allowBuilds:
+  electron: true
+  # Squirrel.Windows path we don't use (targets are NSIS/dmg/AppImage); its
+  # postinstall only stages Squirrel binaries.
+  electron-winstaller: false
+  esbuild: true
