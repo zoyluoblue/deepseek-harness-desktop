@@ -17,7 +17,22 @@ permissions:
   contents: write
 
 jobs:
+  # electron-builder creates a draft release when none matches the version tag;
+  # four legs racing that create produced split-brain duplicate drafts. Create
+  # the draft up front so every leg appends to the same release.
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#desktop-v}"
+          gh release view "v${version}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "v${version}" --repo "$GITHUB_REPOSITORY" --draft --title "$version" --target "$GITHUB_SHA"
   build:
+    needs: prepare-release
+    if: ${{ !cancelled() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
