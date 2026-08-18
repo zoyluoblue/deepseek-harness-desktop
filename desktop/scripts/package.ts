@@ -59,6 +59,14 @@ for (const [link, password] of [['CSC_LINK', 'CSC_KEY_PASSWORD'], ['WIN_CSC_LINK
     delete process.env[link]
   }
 }
+// CSC_* carries the Apple certificate. On a Windows host electron-builder
+// would import it into the cert store and signtool then signs with the wrong
+// certificate (or fails on multiple matches). Windows signing is configured
+// exclusively through WIN_CSC_*.
+if (process.platform === 'win32') {
+  delete process.env.CSC_LINK
+  delete process.env.CSC_KEY_PASSWORD
+}
 
 const publishIndex = argv.indexOf('--publish')
 const publishMode = publishIndex >= 0 ? argv[publishIndex + 1] : 'never'
