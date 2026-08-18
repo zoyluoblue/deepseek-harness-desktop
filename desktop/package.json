@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
   "description": "Electron desktop shell for the DeepSeek Harness Web GUI: spawns the harness web surface as a child process on a bundled Node runtime and shows it in a BrowserWindow.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "author": "zoyluoblue <robbebluecp@gmail.com>",
   "homepage": "https://github.com/zoyluoblue/deepseek-harness-desktop",
