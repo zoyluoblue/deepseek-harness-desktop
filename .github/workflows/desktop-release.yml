@@ -1,7 +1,9 @@
-# Desktop app packaging: four-target matrix building the Electron shell over
+# Desktop app packaging: a per-platform matrix building the Electron shell over
 # each runner's native platform (optional platform packages — sharp, ripgrep,
 # claude-agent-sdk, landlock-run — install per-host, so cross-building is
-# deliberately not attempted). Pushing a desktop-v* tag publishes installers
+# deliberately not attempted; that is also why there is no darwin-x64 leg —
+# GitHub retired the Intel macos-13 runners, and an arm64 host would stage the
+# wrong platform packages). Pushing a desktop-v* tag publishes installers
 # and the electron-updater feed to a GitHub Release; other runs upload
 # workflow artifacts only. Signing/notarization activates when the CSC_*/
 # APPLE_* secrets exist and is skipped (unsigned build) when they don't.
@@ -38,7 +40,6 @@ jobs:
       matrix:
         include:
           - os: macos-14 # darwin arm64
-          - os: macos-13 # darwin x64 (Intel)
           - os: windows-2022 # win32 x64
           - os: ubuntu-22.04 # linux x64
     runs-on: ${{ matrix.os }}
