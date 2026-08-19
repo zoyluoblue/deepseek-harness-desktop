@@ -49,7 +49,12 @@ if (argv.includes('--skip-runtime')) {
 // value (an empty CSC_LINK resolves to the project directory: "not a file").
 // Drop empty ones, and drop a certificate whose password half is missing so
 // the build degrades to unsigned instead of failing the import.
-const SIGNING_ENV = ['CSC_LINK', 'CSC_KEY_PASSWORD', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
+const SIGNING_ENV = [
+  'CSC_LINK', 'CSC_KEY_PASSWORD', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD',
+  'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID',
+  'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER',
+  'APPLE_KEYCHAIN', 'APPLE_KEYCHAIN_PROFILE',
+]
 for (const name of SIGNING_ENV) {
   if (process.env[name] === '') delete process.env[name]
 }

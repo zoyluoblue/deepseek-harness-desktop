@@ -5,6 +5,7 @@
  * layout and app-boot maintains a symlink farm into it, so neither may live
  * inside an asar archive. Only the tiny Electron main bundle is asar'd.
  */
+import { notarize } from '@electron/notarize'
 import { cp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,8 +13,43 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const targetPlatform = process.env.DSH_DESKTOP_TARGET_PLATFORM ?? process.platform
 const targetArch = process.env.DSH_DESKTOP_TARGET_ARCH ?? process.arch
-const hasNotaryEnv = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
-  .every(name => (process.env[name] ?? '') !== '')
+/**
+ * Notarization credentials, in electron-builder's own precedence order (see
+ * MacTargetHelper.getNotarizeOptions): Apple ID + app-specific password, App
+ * Store Connect API key, or a `notarytool store-credentials` keychain profile.
+ * A partially configured strategy makes electron-builder throw, so each is
+ * only claimed once complete.
+ */
+function notaryCredentials() {
+  const env = process.env
+  if (env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID) {
+    return { appleId: env.APPLE_ID, appleIdPassword: env.APPLE_APP_SPECIFIC_PASSWORD, teamId: env.APPLE_TEAM_ID }
+  }
+  if (env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER) {
+    return { appleApiKey: env.APPLE_API_KEY, appleApiKeyId: env.APPLE_API_KEY_ID, appleApiIssuer: env.APPLE_API_ISSUER }
+  }
+  if (env.APPLE_KEYCHAIN_PROFILE) {
+    return env.APPLE_KEYCHAIN
+      ? { keychainProfile: env.APPLE_KEYCHAIN_PROFILE, keychain: env.APPLE_KEYCHAIN }
+      : { keychainProfile: env.APPLE_KEYCHAIN_PROFILE }
+  }
+  return null
+}
+
+const hasNotaryEnv = notaryCredentials() !== null
+
+/**
+ * electron-builder notarizes the .app alone, but macOS assesses the downloaded
+ * .dmg on its own ticket, so an un-notarized wrapper is refused even when the
+ * app inside carries one. Runs per artifact, before the update feed hashes it.
+ * @param artifact - the completed artifact, whose `file` is an absolute path.
+ */
+async function notarizeDmg(artifact) {
+  if (!artifact.file.endsWith('.dmg')) return
+  const credentials = notaryCredentials()
+  if (credentials === null) return
+  await notarize({ tool: 'notarytool', appPath: artifact.file, ...credentials })
+}
 
 /**
  * Copy the runtime closure into the packed app's resources. This cannot ride
@@ -40,6 +76,7 @@ export default {
     { from: `vendor-node/${targetPlatform}-${targetArch}`, to: 'nodejs' },
   ],
   afterPack: copyRuntime,
+  artifactBuildCompleted: notarizeDmg,
   // Auto-update feed; electron-updater reads the generated app-update.yml.
   publish: { provider: 'github', owner: 'zoyluoblue', repo: 'deepseek-harness-desktop' },
   mac: {
@@ -54,8 +91,17 @@ export default {
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.plist',
     // Signing activates via CSC_LINK/CSC_KEY_PASSWORD (or a keychain identity);
-    // notarization additionally needs the three APPLE_* variables.
+    // notarization additionally needs one of the credential strategies above.
     notarize: hasNotaryEnv,
+  },
+  dmg: {
+    // notarytool refuses an unsigned submission, so the wrapper is signed too.
+    sign: hasNotaryEnv,
+    // The dmg is the human installer; electron-updater takes macOS updates from
+    // the zip. Keeping the dmg out of the feed also keeps notarizeDmg honest:
+    // dmg-builder hashes the artifact before emitting the completion event, so
+    // a feed entry would record the pre-staple bytes.
+    writeUpdateInfo: false,
   },
   win: {
     target: [{ target: 'nsis', arch: [targetArch] }],
