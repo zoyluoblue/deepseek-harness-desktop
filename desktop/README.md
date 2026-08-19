@@ -24,7 +24,9 @@ A packaged app also supports `--smoke` (used by CI and manual verification): it 
 
 ## Targets
 
-Each platform packages on its own host — the runtime closure contains per-platform optional packages (sharp, ripgrep, claude-agent-sdk, landlock-run) that pnpm installs for the current host only. `.github/workflows/desktop-release.yml` runs the four-target matrix: macOS arm64 (dmg+zip), macOS x64, Windows x64 (NSIS), Linux x64 (AppImage+deb).
+Each target packages on a host of that same architecture — the runtime closure contains per-target optional packages (sharp and its libvips, koffi, ripgrep, node-addon-require-builtin) that pnpm installs for the current host only, and `prepare-runtime` refuses a staging tree whose platform packages name a different target. `.github/workflows/desktop-release.yml` runs the four-target matrix: macOS arm64 (dmg+zip), macOS x64 (dmg+zip), Windows x64 (NSIS), Linux x64 (AppImage+deb).
+
+The two macOS targets share one `latest-mac.yml`, because electron-updater has no arch-suffixed feed on macOS and selects a build by testing the artifact URL for `arm64`. Each leg emits a feed covering only its own arch, so the `merge-mac-feed` job unions them after the matrix completes. macOS x64 builds on `macos-15-intel`, the last x86_64 image GitHub offers (available through Fall 2027); after that an Intel build needs self-hosted hardware or cross-staging.
 
 ## Releases and auto-update
 
@@ -36,6 +38,7 @@ Signing activates through CI secrets and is skipped when they are absent (builds
 | --- | --- |
 | `CSC_LINK` / `CSC_KEY_PASSWORD` | macOS Developer ID Application certificate (.p12, base64 or file URL) and its password |
 | `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` | notarytool credentials; all three present ⇒ notarization on |
+| `APPLE_API_KEY_B64` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` | App Store Connect API key (base64 `.p8`) as an alternative to the Apple ID pair |
 | `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` | Windows Authenticode certificate and password |
 
 macOS auto-update only works on signed builds (electron-updater requirement); unsigned builds log the failure and continue.

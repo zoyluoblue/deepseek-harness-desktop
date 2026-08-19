@@ -53,7 +53,7 @@ function run(step: string, command: string, args: string[], cwd: string, env?: N
 }
 
 /** Clear and deploy the runtime closure, matching the python single-exe pipeline flags. */
-async function deployStaging(): Promise<void> {
+async function deployStaging(buildTarget: Target): Promise<void> {
   if (staging === repoRoot || repoRoot.startsWith(staging + sep)) {
     throw new Error(`prepare-runtime: refusing to clear ${staging}: it contains the repo root.`)
   }
@@ -71,7 +71,7 @@ async function deployStaging(): Promise<void> {
   ], repoRoot)
   await restoreLegacyHoists()
   await materializeStagedLinks()
-  await restoreExecutableBits()
+  await restoreExecutableBits(buildTarget)
   // The deploy above rewrites the ROOT node_modules into a hoisted production
   // layout as a side effect (same flags as the python single-exe pipeline).
   // Restore the normal dev install so later pnpm runs in the repo don't abort
@@ -148,11 +148,13 @@ async function findSymlink(directory: string): Promise<string | undefined> {
 /**
  * npm strips executable bits from packed files; the root install restores them
  * via postinstall, but a copied tree must not depend on the source's state.
+ * ripgrep ships its binary in a per-target platform package, not in the entry
+ * package, so the path is built from the target.
  */
-async function restoreExecutableBits(): Promise<void> {
+async function restoreExecutableBits({ platform, arch }: Target): Promise<void> {
   const candidates = [
     join(staging, 'node_modules', 'node-pty', 'prebuilds'),
-    join(staging, 'node_modules', '@vscode', 'ripgrep', 'bin'),
+    join(staging, 'node_modules', '@vscode', `ripgrep-${platform}-${arch}`, 'bin'),
   ]
   for (const root of candidates) {
     if (!existsSync(root)) continue
@@ -267,6 +269,37 @@ async function verifyPeerClosure(): Promise<void> {
 }
 
 /**
+ * The closure carries architecture-locked platform packages (sharp, sharp's
+ * libvips, koffi, ripgrep, node-addon-require-builtin) that the installer picks
+ * from the host, so a staging tree left over from a different target would
+ * package binaries the app cannot load. The runtime resolves them by
+ * `process.platform`/`process.arch`, which fails at use, not at startup —
+ * refuse them here instead.
+ */
+async function verifyStagedArch({ platform, arch }: Target): Promise<void> {
+  const PLATFORM_PACKAGE = /-(?:darwin|linux|win32)-(?:x64|arm64|ia32)(?:-(?:musl|gnu))?$/
+  const nodeModules = join(staging, 'node_modules')
+  const names: string[] = []
+  for (const entry of await readdir(nodeModules)) {
+    if (entry.startsWith('.')) continue
+    if (entry.startsWith('@')) {
+      for (const scoped of await readdir(join(nodeModules, entry))) names.push(`${entry}/${scoped}`)
+    } else {
+      names.push(entry)
+    }
+  }
+  const expected = `-${platform}-${arch}`
+  const foreign = names.filter(name => PLATFORM_PACKAGE.test(name) && !name.includes(expected))
+  if (foreign.length > 0) {
+    throw new Error(
+      `prepare-runtime: staged tree carries platform packages for another target: ${foreign.sort().join(', ')}.\n`
+      + `Expected ${platform}-${arch}. Delete desktop/runtime-staging and rerun without --skip-deploy.`,
+    )
+  }
+  console.log(`prepare-runtime: staged platform packages match ${platform}-${arch}`)
+}
+
+/**
  * Fail fast on broken module resolution in the staged tree: run the staged CLI
  * with the staged Node. Host-target builds only — a cross-target Node cannot
  * execute here.
@@ -285,8 +318,9 @@ function verifyStaging({ platform, arch }: Target): void {
 const buildTarget = target()
 const skipDeploy = process.argv.includes('--skip-deploy')
 if (skipDeploy) console.log('prepare-runtime: skipping runtime deploy (--skip-deploy)')
-else await deployStaging()
+else await deployStaging(buildTarget)
 await verifyPeerClosure()
+await verifyStagedArch(buildTarget)
 await stageNode(buildTarget)
 verifyStaging(buildTarget)
 console.log('prepare-runtime: done')

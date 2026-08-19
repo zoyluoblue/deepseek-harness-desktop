@@ -1,12 +1,15 @@
-# Desktop app packaging: a per-platform matrix building the Electron shell over
-# each runner's native platform (optional platform packages — sharp, ripgrep,
-# claude-agent-sdk, landlock-run — install per-host, so cross-building is
-# deliberately not attempted; that is also why there is no darwin-x64 leg —
-# GitHub retired the Intel macos-13 runners, and an arm64 host would stage the
-# wrong platform packages). Pushing a desktop-v* tag publishes installers
-# and the electron-updater feed to a GitHub Release; other runs upload
-# workflow artifacts only. Signing/notarization activates when the CSC_*/
-# APPLE_* secrets exist and is skipped (unsigned build) when they don't.
+# Desktop app packaging: one leg per target, each building on a runner whose
+# host IS that target. The runtime closure pulls architecture-locked platform
+# packages (sharp + its libvips, koffi, ripgrep, node-addon-require-builtin)
+# that the installer selects from the host, so cross-building would stage the
+# wrong binaries; native legs also let prepare-runtime run the staged CLI under
+# the staged Node as a real smoke test. macOS ships two arches, and because
+# macOS has no arch-suffixed update feed, both legs write a competing
+# latest-mac.yml — merge-mac-feed reconciles them after the matrix completes.
+# Pushing a desktop-v* tag publishes installers and the electron-updater feed
+# to a GitHub Release; other runs upload workflow artifacts only.
+# Signing/notarization activates when the CSC_*/APPLE_* secrets exist and is
+# skipped (unsigned build) when they don't.
 name: desktop-release
 
 on:
@@ -39,7 +42,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14 # darwin arm64
+          - os: macos-15 # darwin arm64
+          - os: macos-15-intel # darwin x64; GitHub's last x86_64 macOS image
           - os: windows-2022 # win32 x64
           - os: ubuntu-22.04 # linux x64
     runs-on: ${{ matrix.os }}
@@ -91,6 +95,16 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: pnpm -C desktop run package -- --skip-build --publish ${{ startsWith(github.ref, 'refs/tags/desktop-v') && 'always' || 'never' }}
+      # Each macOS leg's feed lists only its own arch. Keep a copy before the
+      # other leg's upload overwrites the release asset; merge-mac-feed unions
+      # them once the matrix is done.
+      - name: Upload macOS update feed
+        if: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/desktop-v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-feed-${{ matrix.os }}
+          path: desktop/out/latest-mac.yml
+          if-no-files-found: error
       - name: Upload artifacts (non-release runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/desktop-v') }}
         uses: actions/upload-artifact@v4
@@ -103,3 +117,37 @@ jobs:
             desktop/out/*.AppImage
             desktop/out/*.deb
           if-no-files-found: error
+
+  # Both macOS legs publish a latest-mac.yml holding only their own arch, and
+  # the GitHub publisher deletes then re-uploads the asset, so whichever leg
+  # finishes last wins. Serving an Intel-only feed would silently hand Apple
+  # Silicon users the x64 build, so replace the survivor with the union.
+  merge-mac-feed:
+    needs: build
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/desktop-v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install desktop workspace
+        run: pnpm -C desktop install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mac-feed-*
+          path: mac-feeds
+      - name: Merge and publish the macOS feed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          feeds=(mac-feeds/*/latest-mac.yml)
+          if [ "${#feeds[@]}" -ne 2 ]; then
+            echo "expected one feed per macOS leg, found: ${feeds[*]}" >&2
+            exit 1
+          fi
+          pnpm -C desktop run merge:mac-feed "$GITHUB_WORKSPACE/latest-mac.yml" "${feeds[@]/#/$GITHUB_WORKSPACE/}"
+          cat latest-mac.yml
+          gh release upload "v${GITHUB_REF_NAME#desktop-v}" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
