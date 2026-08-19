@@ -1,5 +1,7 @@
 # dsh-desktop
 
+English | [中文](README.zh.md)
+
 Electron desktop shell for the DeepSeek Harness Web GUI. The shell is thin by design: the Electron main process launches the harness web surface (`dsh web --port 0`) as a child process on a bundled Node 24 runtime, waits for the `dsh web: <url>` readiness line, and shows that loopback URL in a `BrowserWindow`. Everything else — the `/api` protocol, the React frontend, sessions, settings, credentials — is the unmodified web product. Sessions and settings live in the shared `~/.dsh` (`$DSH_HOME`), so the app and a CLI install see the same state.
 
 This directory is its own isolated pnpm workspace (see `pnpm-workspace.yaml` here): Electron's ~100MB binary download must not tax root `pnpm install` runs or CI. The harness runtime closure the app bundles is owned by the root-workspace member `runtime/` (a dependency-only deploy root on `@deepseek-ai/dsh`), materialized with `pnpm deploy` by `scripts/prepare-runtime.ts` and shipped as a real, symlink-free file tree under the app's resources — the Cordis Loader and app-boot's profile symlink farm require an actual `node_modules` layout, so the runtime never enters the asar.
@@ -42,6 +44,14 @@ Signing activates through CI secrets and is skipped when they are absent (builds
 | `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` | Windows Authenticode certificate and password |
 
 macOS auto-update only works on signed builds (electron-updater requirement); unsigned builds log the failure and continue.
+
+When CI signs but cannot notarize — the usual case, since a `notarytool` keychain profile only exists on a developer's own machine — finish the macOS artifacts afterwards from a machine that holds credentials:
+
+```sh
+APPLE_KEYCHAIN_PROFILE=<profile> pnpm run notarize:mac <dir-of-downloaded-artifacts>
+```
+
+It notarizes and staples the app inside each update zip (rezipping it, since the updater replaces the bundle directly), signs and notarizes each dmg, and rewrites the feed hashes the rezip invalidated. Upload the results with `gh release upload --clobber` and delete the now-stale mac zip blockmaps. Notarization is architecture-independent, so an Apple Silicon machine can finish the Intel artifacts.
 
 ## Known limitations
 
